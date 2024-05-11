@@ -6,6 +6,7 @@ from vits2.text.symbols import symbols
 _symbol_to_id = {s: i for i, s in enumerate(symbols)}
 _id_to_symbol = {i: s for i, s in enumerate(symbols)}
 
+
 def text_to_sequence(text: str, cleaner_names):
     """Converts a string of text to a sequence of IDs corresponding to the symbols in the text.
     Args:
@@ -16,7 +17,6 @@ def text_to_sequence(text: str, cleaner_names):
     """
 
     sequence = []
-
 
     clean_text = _clean_text(text, cleaner_names)
     for symbol in clean_text:

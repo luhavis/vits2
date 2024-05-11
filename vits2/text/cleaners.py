@@ -31,22 +31,28 @@ _abbreviations = [
     ]
 ]
 
+
 def expand_abbreviations(text: str):
     for regex, replacement in _abbreviations:
         text = re.sub(regex, replacement, text)
     return text
 
+
 # def expand_numbers(text: str):
 #     return normalize_numbers(text: str)
+
 
 def lowercase(text: str):
     return text.lower()
 
+
 def collapse_whitespace(text: str):
     return re.sub(_whitespace_re, " ", text)
 
+
 def convert_to_ascii(text: str):
     return unidecode(text)
+
 
 def basic_cleaners(text: str):
     """"""
@@ -54,12 +60,14 @@ def basic_cleaners(text: str):
     text = collapse_whitespace(text)
     return text
 
+
 def transliteration_cleaners(text: str):
     """"""
     text = convert_to_ascii(text)
     text = lowercase(text)
     text = collapse_whitespace(text)
     return text
+
 
 def english_cleaners(text: str):
     """"""
@@ -70,12 +78,19 @@ def english_cleaners(text: str):
     phonemes = collapse_whitespace(phonemes)
     return phonemes
 
+
 def english_cleaners2(text: str):
     """"""
     text = convert_to_ascii(text)
     text = lowercase(text)
     text = expand_abbreviations(text)
-    phonemes = phonemize(text, language="en-us", backend="espeak", strip=True, preserve_punctuation=True, with_stress=True)
+    phonemes = phonemize(
+        text,
+        language="en-us",
+        backend="espeak",
+        strip=True,
+        preserve_punctuation=True,
+        with_stress=True,
+    )
     phonemes = collapse_whitespace(phonemes)
     return phonemes
-
