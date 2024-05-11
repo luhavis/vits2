@@ -19,6 +19,8 @@ torchtext = "==0.15.2"
 torchvision = "==0.15.2"
 tqdm = "*"
 pyyaml = "*"
+unidecode = "*"
+librosa = "*"
 
 [dev-packages]
 isort = "*"
