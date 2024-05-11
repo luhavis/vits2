@@ -371,7 +371,7 @@ class MultiHeadAttention(nn.Module):
         return x_final
 
     def _absolute_position_to_relative_position(self, x: torch.Tensor):
-        """ "
+        """
         x: [b, h, l, l]
         ret: [b, h, l, 2*l-1]
         """

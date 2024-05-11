@@ -281,7 +281,7 @@ class ResidualCouplingBlock(nn.Module):
         x: torch.Tensor,
         x_mask: torch.Tensor,
         g: torch.Tensor = None,
-        reverse: bool = True,
+        reverse: bool = False,
     ):
         if not reverse:
             for flow in self.flows:
