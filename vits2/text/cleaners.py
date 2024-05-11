@@ -55,14 +55,14 @@ def convert_to_ascii(text: str):
 
 
 def basic_cleaners(text: str):
-    """"""
+    """Basic pipeline that lowercases and collapses whitespace without transliteration."""
     text = lowercase(text)
     text = collapse_whitespace(text)
     return text
 
 
 def transliteration_cleaners(text: str):
-    """"""
+    """Pipeline for non-English text that transliterates to ASCII."""
     text = convert_to_ascii(text)
     text = lowercase(text)
     text = collapse_whitespace(text)
@@ -70,7 +70,7 @@ def transliteration_cleaners(text: str):
 
 
 def english_cleaners(text: str):
-    """"""
+    """Pipeline for English text, including abbreviation expansion."""
     text = convert_to_ascii(text)
     text = lowercase(text)
     text = expand_abbreviations(text)
@@ -80,7 +80,7 @@ def english_cleaners(text: str):
 
 
 def english_cleaners2(text: str):
-    """"""
+    """Pipeline for English text, including abbreviation expansion. + punctuation + stress"""
     text = convert_to_ascii(text)
     text = lowercase(text)
     text = expand_abbreviations(text)
