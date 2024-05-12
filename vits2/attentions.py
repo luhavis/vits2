@@ -3,6 +3,7 @@ import math
 import torch
 from torch import nn
 from torch.nn import functional as F
+from torch.nn.utils import remove_weight_norm, weight_norm
 
 from vits2 import commons
 from vits2.modules import LayerNorm
@@ -26,7 +27,7 @@ class Encoder(nn.Module):
         kernel_size=1,
         p_dropout=0.0,
         window_size=4,
-        **kwargs
+        **kwargs,
     ):
         super().__init__()
 
@@ -43,6 +44,25 @@ class Encoder(nn.Module):
         self.norm_layers_1 = nn.ModuleList()
         self.ffn_layers = nn.ModuleList()
         self.norm_layers_2 = nn.ModuleList()
+
+        # for vits2
+        # if kwargs has spk_emb_dim, then add a linear layer to project spk_emb_dim to hidden_channels
+        self.cond_layer_idx = self.n_layers
+        if "gin_channels" in kwargs:
+            self.gin_channels = kwargs["gin_channels"]
+            if self.gin_channels != 0:
+                self.spk_emb_linear = nn.Linear(
+                    self.gin_channels,
+                    self.hidden_channels,
+                )
+                # vits2 says 3rd block, so idx is 2 by default
+                self.cond_layer_idx = (
+                    kwargs["cond_layer_idx"] if "cond_layer_idx" in kwargs else 2
+                )
+
+                assert (
+                    self.cond_layer_idx < self.n_layers
+                ), "cond_layer_idx should be less than n_layers."
 
         for i in range(self.n_layers):
             self.attn_layers.append(
@@ -66,10 +86,18 @@ class Encoder(nn.Module):
             )
             self.norm_layers_2.append(LayerNorm(hidden_channels))
 
-    def forward(self, x, x_mask):
+    def forward(self, x: torch.Tensor, x_mask: torch.Tensor, g: torch.Tensor = None):
         attn_mask = x_mask.unsqueeze(2) * x_mask.unsqueeze(-1)
         x = x * x_mask
         for i in range(self.n_layers):
+
+            # for vits2
+            if i == self.cond_layer_idx and g is not None:
+                g = self.spk_emb_linear(g.transpose(1, 2))
+                g = g.transpose(1, 2)
+                x = x + g
+                x = x * x_mask
+
             y = self.attn_layers[i](x, x, attn_mask)
             y = self.drop(y)
             x = self.norm_layers_1[i](x + y)
@@ -93,7 +121,7 @@ class Decoder(nn.Module):
         p_dropout=0.0,
         proximal_bias=False,
         proximal_init=True,
-        **kwargs
+        **kwargs,
     ):
         super().__init__()
         self.hidden_channels = hidden_channels
@@ -464,4 +492,232 @@ class FFN(nn.Module):
         padding = [[0, 0], [0, 0], [pad_l, pad_r]]
 
         x = F.pad(x, commons.convert_pad_shape(padding))
+        return x
+
+
+class DepthwiseSeparableConv1d(nn.Module):  # for vits2
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        kernel_size,
+        stride=1,
+        padding=0,
+        dilation=1,
+        bias=True,
+        padding_mode="zeros",  # TODO: refine this type
+        device=None,
+        dtype=None,
+    ):
+        super().__init__()
+
+        self.depth_conv = nn.Conv1d(
+            in_channels=in_channels,
+            out_channels=in_channels,
+            kernel_size=kernel_size,
+            groups=in_channels,
+            stride=stride,
+            padding=padding,
+            dilation=dilation,
+            bias=bias,
+            padding_mode=padding_mode,
+            device=device,
+            dtype=dtype,
+        )
+
+        self.point_conv = nn.Conv1d(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=1,
+            bias=bias,
+            device=device,
+            dtype=dtype,
+        )
+
+    def forward(self, input: torch.Tensor):
+        return self.point_conv(self.depth_conv(input))
+
+    def weight_norm(self):
+        self.depth_conv = weight_norm(self.depth_conv, name="weight")
+        self.point_conv = weight_norm(self.point_conv, name="weight")
+
+    def remove_weight_norm(self):
+        self.depth_conv = remove_weight_norm(self.depth_conv, name="weight")
+        self.point_conv = remove_weight_norm(self.point_conv, name="weight")
+
+
+class DepthwiseSeparableTransposeConv1d(nn.Module):  # for vits2
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        kernel_size,
+        stride=1,
+        padding=0,
+        output_padding=0,
+        bias=True,
+        dilation=1,
+        padding_mode="zeros",  # TODO: refine this type
+        device=None,
+        dtype=None,
+    ):
+        super().__init__()
+
+        self.depth_conv = nn.ConvTranspose1d(
+            in_channels=in_channels,
+            out_channels=in_channels,
+            kernel_size=kernel_size,
+            groups=in_channels,
+            stride=stride,
+            output_padding=output_padding,
+            padding=padding,
+            dilation=dilation,
+            bias=bias,
+            padding_mode=padding_mode,
+            device=device,
+            dtype=dtype,
+        )
+
+        self.point_conv = nn.Conv1d(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=1,
+            bias=bias,
+            device=device,
+            dtype=dtype,
+        )
+
+    def forward(self, input: torch.Tensor):
+        return self.point_conv(self.depth_conv(input))
+
+    def weight_norm(self):
+        self.depth_conv = weight_norm(self.depth_conv, name="weight")
+        self.point_conv = weight_norm(self.point_conv, name="weight")
+
+    def remove_weight_norm(self):
+        remove_weight_norm(self.depth_conv, name="weight")
+        remove_weight_norm(self.point_conv, name="weight")
+
+
+def weight_norm_modules(module, name="weight", dim=0):
+    if isinstance(module, DepthwiseSeparableConv1d) or isinstance(
+        module, DepthwiseSeparableTransposeConv1d
+    ):
+        module.weight_norm()
+        return module
+    else:
+        return weight_norm(module, name, dim)
+
+
+def remove_weight_norm_modules(module, name="weight"):
+    if isinstance(module, DepthwiseSeparableConv1d) or isinstance(
+        module, DepthwiseSeparableTransposeConv1d
+    ):
+        module.remove_weight_norm()
+    else:
+        remove_weight_norm(module, name)
+
+
+class FFT(nn.Module):
+    def __init__(
+        self,
+        hidden_channels,
+        filter_channels,
+        n_heads,
+        n_layers=1,
+        kernel_size=1,
+        p_dropout=0.0,
+        proximal_bias=False,
+        proximal_init=True,
+        isflow=False,
+        **kwargs,
+    ):
+        super().__init__()
+
+        self.hidden_channels = hidden_channels
+        self.filter_channels = filter_channels
+        self.n_heads = n_heads
+        self.n_layers = n_layers
+        self.kernel_size = kernel_size
+        self.p_dropout = p_dropout
+        self.proximal_bias = proximal_bias
+        self.proximal_init = proximal_init
+
+        if isflow and "gin_channels" in kwargs and kwargs["gin_channels"] > 0:
+            cond_layer = nn.Conv1d(
+                kwargs["gin_channels"],
+                2 * hidden_channels * n_layers,
+                1,
+            )
+            self.cond_pre = nn.Conv1d(
+                hidden_channels,
+                2 * hidden_channels,
+                1,
+            )
+            self.cond_layer = weight_norm_modules(cond_layer, name="weight")
+            self.gin_channels = kwargs["gin_channels"]
+
+        self.drop = nn.Dropout(p_dropout)
+        self.self_attn_layers = nn.ModuleList()
+        self.norm_layers_0 = nn.ModuleList()
+        self.ffn_layers = nn.ModuleList()
+        self.norm_layers_1 = nn.ModuleList()
+
+        for i in range(self.n_layers):
+            self.self_attn_layers.append(
+                MultiHeadAttention(
+                    hidden_channels,
+                    hidden_channels,
+                    n_heads,
+                    p_dropout=p_dropout,
+                    proximal_bias=proximal_bias,
+                    proximal_init=proximal_init,
+                )
+            )
+            self.norm_layers_0.append(LayerNorm(hidden_channels))
+            self.ffn_layers.append(
+                FFN(
+                    hidden_channels,
+                    hidden_channels,
+                    filter_channels,
+                    kernel_size,
+                    p_dropout=p_dropout,
+                    causal=True,
+                )
+            )
+            self.norm_layers_1.append(LayerNorm(hidden_channels))
+
+    def forward(self, x: torch.Tensor, x_mask: torch.Tensor, g: torch.Tensor = None):
+        """
+        x: decoder input
+        h: encoder output
+        """
+
+        if g is not None:
+            g = self.cond_layer(g)
+
+        self_attn_mask = commons.subsequent_mask(x_mask.size(2)).to(
+            device=x.device, dtype=x.dtype
+        )
+        x = x * x_mask
+
+        for i in range(self.n_layers):
+            if g is not None:
+                x = self.cond_pre(x)
+                cond_offset = i * 2 * self.hidden_channels
+                g_l = g[:, cond_offset : cond_offset + 2 * self.hidden_channels, :]
+                x = commons.fused_add_tanh_sigmoid_multiply(
+                    x,
+                    g_l,
+                    torch.IntTensor([self.hidden_channels]),
+                )
+            y = self.self_attn_layers[i](x, x, self_attn_mask)
+            y = self.drop(y)
+            x = self.norm_layers_0[i](x + y)
+
+            y = self.ffn_layers[i](x, x_mask)
+            y = self.drop(y)
+            x = self.norm_layers_1[i](x + y)
+
+        x = x * x_mask
         return x

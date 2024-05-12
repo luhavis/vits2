@@ -102,13 +102,33 @@ def summarize(
         writer.add_audio(k, v, global_step, audio_sampling_rate)
 
 
-def latest_checkpoint_path(dir_path: str, regex: str = "G_*.pth"):
+def scan_checkpoint(dir_path: str, regex: str):
     f_list = glob(os.path.join(dir_path, regex))
     f_list.sort(key=lambda f: int("".join(filter(str.isdigit, f))))
+    if len(f_list) == 0:
+        return None
+    return f_list
+
+
+def latest_checkpoint_path(dir_path: str, regex: str = "G_*.pth"):
+    f_list = scan_checkpoint(dir_path, regex)
+    if not f_list:
+        return None
     x = f_list[-1]
     print(x)
 
     return x
+
+
+def remove_old_checkpoints(
+    checkpoint_dir: str, prefixes: list = ["G_*.pth", "D_*.pth", "DUR_*.pth"]
+):
+    for prefix in prefixes:
+        sorted_ckpts = scan_checkpoint(checkpoint_dir, prefix)
+        if sorted_ckpts and len(sorted_ckpts) > 3:
+            for ckpt_path in sorted_ckpts[:-3]:
+                os.remove(ckpt_path)
+                print(f"removed {ckpt_path}.")
 
 
 def plot_spectrogram_to_numpy(spectrogram):
@@ -221,6 +241,18 @@ def get_hparams(init: bool = True):
     return hparams
 
 
+def get_hparams_from_dir(model_dir: str):
+    config_save_path = os.path.join(model_dir, "config.json")
+    with open(config_save_path, "r", encoding="utf-8") as f:
+        data = f.read()
+
+    config = json.loads(data)
+
+    hparams = hparams(**config)
+    hparams.model_dir = model_dir
+    return hparams
+
+
 def get_hparams_from_file(config_path: str):
     with open(config_path, "r", encoding="utf-8") as f:
         data = f.read()
@@ -228,7 +260,6 @@ def get_hparams_from_file(config_path: str):
     config = json.loads(data)
 
     hparams = HParams(**config)
-
     return hparams
 
 
