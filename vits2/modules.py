@@ -311,7 +311,7 @@ class ResBlock1(nn.Module):
                         kernel_size,
                         1,
                         dilation=1,
-                        padding=common.get_padding(kernel_size, 1),
+                        padding=commons.get_padding(kernel_size, 1),
                     )
                 ),
             ]
