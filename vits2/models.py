@@ -308,7 +308,7 @@ class DurationDiscriminatorV1(nn.Module):  # for vit2
         return output_probs
 
 
-class DurationDiscrimiatorV2(nn.Module):  # for vits2
+class DurationDiscriminatorV2(nn.Module):  # for vits2
     # TODO : not using "spk conditioning" for now according to the paper.
     # Can be a better discriminator if we use it.
 
