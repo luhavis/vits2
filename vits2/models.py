@@ -206,7 +206,7 @@ class DurationPredictor(nn.Module):
         return x * x_mask
 
 
-class DurationDiscriminatorV1(nn.Module):  # for vit2
+class DurationDiscriminatorV1(nn.Module):  # for vits2
     # TODO : not using "spk conditioning" for now according to the paper.
     # Can be a better discriminator if we use it.
 
@@ -529,7 +529,7 @@ class ResidualCouplingTransformersLayer2(nn.Module):  # for vits2
             logdet = torch.sum(logs, [1, 2])
             return x, logdet
         else:
-            x = (x1 - m) * torch.exp(-logs) * x_mask
+            x1 = (x1 - m) * torch.exp(-logs) * x_mask
             x = torch.cat([x0, x1], 1)
             return x
 
@@ -601,7 +601,7 @@ class ResidualCouplingTransformersLayer(nn.Module):  # for vits2
     ):
         x0, x1 = torch.split(x, [self.half_channels] * 2, 1)
         x0_ = self.pre_transformer(x0 * x_mask, x_mask)  # for vits2
-        x0_ = x0_ + x0  # vits2 resdual connection
+        x0_ = x0_ + x0  # vits2 residual connection
         h = self.pre(x0_) * x_mask  # changed from x0 to x0_ to retain x0 for the flow
         h = self.enc(h, x_mask, g=g)
 
@@ -709,7 +709,7 @@ class MonoTransformerFlowLayer(nn.Module):  # for vits2
         residual_connection=False,
         # according to VITS-2 paper fig 1B set residual_connection=True
     ):
-        assert channels % 2 == 0, "channles should be divisible by 2."
+        assert channels % 2 == 0, "channels should be divisible by 2."
         super().__init__()
 
         self.channels = channels
@@ -884,7 +884,7 @@ class ResidualCouplingTransformersBlock(nn.Module):  # for vits2
                             channels,
                             hidden_channels,
                             mean_only=True,
-                            residual_connection=True,
+                            residual_connection=False,
                         )
                     )
             elif transformer_flow_type == "mono_layer_post_residual":
@@ -1508,8 +1508,7 @@ class SynthesizerTrn(nn.Module):
         noise_scale_w=1.0,
         max_len=None,
     ):
-        x, m_p, logs_p, x_mask = self.enc_p(x, x_lengths)
-
+        
         if self.n_speakers > 0:
             g = self.emb_g(sid).unsqueeze(-1)  # [b, h, 1]
         else:
