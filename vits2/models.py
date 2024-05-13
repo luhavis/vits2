@@ -627,7 +627,7 @@ class ResidualCouplingTransformersLayer(nn.Module):  # for vits2
             return x
 
 
-class FFTransformerCouplingLayer(nn.Mdoule):  # for vits2
+class FFTransformerCouplingLayer(nn.Module):  # for vits2
     def __init__(
         self,
         channels,
