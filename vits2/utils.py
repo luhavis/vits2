@@ -16,6 +16,8 @@ MATPLOTLIB_FLAG = False
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 logger = logging
 
+numba_logger = logging.getLogger("numba")
+numba_logger.setLevel(logging.WARNING)
 
 def load_checkpoint(checkpoint_path: str, model, optimizer: torch.nn.Module = None):
     assert os.path.isfile(checkpoint_path)
@@ -299,6 +301,8 @@ def get_logger(model_dir: str, filename: str = "train.log"):
     logger.addHandler(h)
     return logger
 
+def debug_tensor():
+    ""
 
 class HParams:
     def __init__(self, **kwargs):
