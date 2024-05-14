@@ -56,7 +56,7 @@ def run(rank, n_gpus, hps):
         writer_eval = SummaryWriter(log_dir=os.path.join(hps.model_dir, "eval"))
 
     dist.init_process_group(
-        backend="nccl",
+        backend="nccl" if dist.is_nccl_available() else "gloo",
         init_method="env://",
         world_size=n_gpus,
         rank=rank,
