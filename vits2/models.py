@@ -1114,8 +1114,8 @@ class Generator(nn.Module):
 
     def remove_weight_norm(self):
         print("Removing weight norm...")
-        for l in self.ups:
-            remove_weight_norm(l)
+        for layer in self.ups:
+            remove_weight_norm(layer)
 
         for l in self.resblocks:
             l.remove_weight_norm()
@@ -1201,8 +1201,8 @@ class DiscriminatorP(nn.Module):
 
         x = x.view(b, c, t // self.period, self.period)
 
-        for l in self.convs:
-            x = l(x)
+        for layer in self.convs:
+            x = layer(x)
             x = F.leaky_relu(x, modules.LRELU_SLOPE)
             fmap.append(x)
 
