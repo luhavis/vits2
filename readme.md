@@ -27,6 +27,12 @@ pip install poetry
 poetry install
 ```
 
+### Build monotonic_align
+```bash
+cd monotomic_align
+mkdir monotomic_align
+python setup.py build_ext --inplace
+```
 
 # References
 - [daniilrobnikov/vits2](https://github.com/daniilrobnikov/vits2)
