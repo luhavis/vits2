@@ -1,16 +1,30 @@
-# Create env
+# VITS2
+This repo is practice project.
+
+# Tensorboard
 ```bash
-conda create -n vits2 python=3.11
+tensorboard --logdir {model_dir} --port 6006
 ```
 
-# Activate env
+# Setup env
+
+python 3.10 require
+
+
+### Create anaconda env
+```bash
+conda create -n vits2 python=3.10
+```
+
+### Activate anaconda env
 ```bash
 conda activate vits2
 ```
 
-# Install packages
+### Install packages
 ```bash
-pip install -r requirements.txt
+pip install poetry
+poetry install
 ```
 
 
