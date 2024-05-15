@@ -612,7 +612,10 @@ def train_and_evaluate(
 
 def evaluate(hps, generator, eval_loader, writer_eval):
     generator.eval()
-
+    
+    logger = utils.get_logger(hps.model_dir)
+    logger.info("Evaluating ...")
+    
     with torch.no_grad():
         for batch_idx, (
             x,
