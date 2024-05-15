@@ -1117,8 +1117,8 @@ class Generator(nn.Module):
         for layer in self.ups:
             remove_weight_norm(layer)
 
-        for l in self.resblocks:
-            l.remove_weight_norm()
+        for layer in self.resblocks:
+            layer.remove_weight_norm()
 
 
 class DiscriminatorP(nn.Module):
@@ -1236,8 +1236,8 @@ class DiscriminatorS(nn.Module):
     def forward(self, x: torch.Tensor):
         fmap = []
 
-        for l in self.convs:
-            x = l(x)
+        for layer in self.convs:
+            x = layer(x)
             x = F.leaky_relu(x, modules.LRELU_SLOPE)
             fmap.append(x)
 
