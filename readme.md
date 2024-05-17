@@ -6,6 +6,11 @@ This repo is practice project.
 tensorboard --logdir {model_dir} --port 6006
 ```
 
+# Train
+```bash
+python train_ms.py --config {config_file_path} --model {model_path}
+```
+
 # Setup env
 
 python 3.10 require
