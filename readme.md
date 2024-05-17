@@ -8,7 +8,7 @@ tensorboard --logdir {model_dir} --port 6006
 
 # Train
 ```bash
-python train_ms.py --config {config_file_path} --model {model_path}
+python train_ms.py --config {config_file_path} --model {model_name}
 ```
 
 # Setup env
