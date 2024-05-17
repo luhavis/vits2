@@ -3,6 +3,8 @@ import re
 from phonemizer import phonemize
 from unidecode import unidecode
 
+from vits2.text import korean
+
 # Regular expression matching whitespace
 _whitespace_re = re.compile(r"\s+")
 
@@ -94,3 +96,13 @@ def english_cleaners2(text: str):
     )
     phonemes = collapse_whitespace(phonemes)
     return phonemes
+
+
+def korean_cleaners(text: str):
+    """Pipeline for Korean text"""
+    text = korean.latin_to_hangul(text)
+    text = korean.number_to_hangul(text)
+    text = korean.divide_hangul(text)
+    if re.match("[\u3131-\u3163]", text[-1]):
+        text += "."
+    return text
