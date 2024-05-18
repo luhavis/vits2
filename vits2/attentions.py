@@ -19,13 +19,7 @@ from torch.nn.utils import remove_weight_norm, weight_norm
 from vits2 import commons
 from vits2.modules import LayerNorm
 
-"""
-Attentions
-- Encoder
-- Decoder
-- MultiHeadAttention
-- FFN
-"""
+
 
 
 class Encoder(nn.Module):
@@ -101,7 +95,6 @@ class Encoder(nn.Module):
         attn_mask = x_mask.unsqueeze(2) * x_mask.unsqueeze(-1)
         x = x * x_mask
         for i in range(self.n_layers):
-
             # for vits2
             if i == self.cond_layer_idx and g is not None:
                 g = self.spk_emb_linear(g.transpose(1, 2))
@@ -255,7 +248,7 @@ class MultiHeadAttention(nn.Module):
 
         if window_size is not None:
             n_heads_rel = 1 if heads_share else n_heads
-            rel_stddev = self.k_channels**-0.5
+            rel_stddev = self.k_channels ** -0.5
             self.emb_rel_k = nn.Parameter(
                 torch.randn(n_heads_rel, window_size * 2 + 1, self.k_channels)
                 * rel_stddev
