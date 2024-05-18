@@ -108,8 +108,6 @@ def run(rank, n_gpus, hps):
             collate_fn=collate_fn,
         )
 
-    # some of these flags are not being used in the code and directly set in hps json file.
-    # they are kept here for reference and prototyping.
     if (
         "use_transformer_flows" in hps.model.keys()
         and hps.model.use_tranformer_flows == True
@@ -425,7 +423,6 @@ def train_and_evaluate(
                 )
 
                 with autocast(enabled=False):
-                    # TODO: I think need to mean using the mask, but for now, just mean all
                     (
                         loss_dur_disc,
                         losses_dur_disc_r,
