@@ -1,14 +1,16 @@
 import os
 import random
 
+from tqdm import tqdm
+
 import torch
 from torch.utils.data import Dataset
 from torch.utils.data.distributed import DistributedSampler
 
-from vits2 import commons
+from vits2 import commons, utils
 from vits2.mel_processing import mel_spectrogram_torch, spectrogram_torch
 from vits2.text import cleaned_text_to_sequence, text_to_sequence
-from vits2.utils import load_filepaths_and_text, load_wav_to_torch
+from vits2.utils import load_filepaths_and_text, load_wav_to_torch, load_wav_to_torch_librosa
 
 
 class TextAudioLoader(Dataset):
@@ -72,7 +74,7 @@ class TextAudioLoader(Dataset):
 
     def get_audio(self, filename: str):
         # TODO : if linear spec exists convert to mel from existing linear spec
-        audio, sampling_rate = load_wav_to_torch(filename)
+        audio, sampling_rate = load_wav_to_torch_librosa(filename, self.sampling_rate)
 
         if sampling_rate != self.sampling_rate:
             raise ValueError(
@@ -124,7 +126,7 @@ class TextAudioLoader(Dataset):
                 )
             spec = torch.squeeze(spec, 0)
             torch.save(spec, spec_filename)
-
+        
         return spec, audio_norm
 
     def get_text(self, text: str):
@@ -224,7 +226,7 @@ class TextAudioSpeakerLoader(Dataset):
     3) computes spectrograms from audio files.
     """
 
-    def __init__(self, audiopaths_sid_text, hparams):
+    def __init__(self, audiopaths_sid_text, hparams, **kwargs):
         self.audiopaths_sid_text = load_filepaths_and_text(audiopaths_sid_text)
         self.text_cleaners = hparams.text_cleaners
         self.max_wav_value = hparams.max_wav_value
@@ -236,7 +238,7 @@ class TextAudioSpeakerLoader(Dataset):
         self.cleaned_text = getattr(hparams, "cleaned_text", False)
         self.add_blank = hparams.add_blank
         self.min_text_len = getattr(hparams, "min_text_len", 1)
-        self.max_text_len = getattr(hparams, "max_text_len", 190)
+        self.max_text_len = getattr(hparams, "max_text_len", 300)
 
         # for vits2
         self.min_audio_len = getattr(hparams, "min_audio_len", 8192)
@@ -246,6 +248,8 @@ class TextAudioSpeakerLoader(Dataset):
         )
         if self.use_mel_spec_posterior:
             self.n_mel_channels = getattr(hparams, "n_mel_channels", 80)
+
+        self.model_dir = kwargs.get("model_dir") # for logging
 
         random.seed(1234)
         random.shuffle(self.audiopaths_sid_text)
@@ -259,21 +263,29 @@ class TextAudioSpeakerLoader(Dataset):
         # wav_length ~= file_size / (wav_channels * Bytes per dim) = file_size / (1 * 2)
         # spec_length = wav_length // hop_length
 
+        skipped = 0
+        logger = utils.get_logger(self.model_dir)
+
         audiopaths_sid_text_new = []
         lengths = []
-
-        for audiopath, sid, text in self.audiopaths_sid_text:
+        logger.info("Init dataset...")
+        for audiopath, sid, text in tqdm(self.audiopaths_sid_text):
 
             if not os.path.isfile(audiopath):
+                skipped += 1
                 continue
 
             if self.min_text_len <= len(text) and len(text) <= self.max_text_len:
                 audiopaths_sid_text_new.append([audiopath, sid, text])
                 length = os.path.getsize(audiopath) // (2 * self.hop_length)
                 if length < self.min_audio_len // self.hop_length:
+                    skipped +=1
                     continue
 
                 lengths.append(length)
+
+        logger.info(f"min: {min(lengths)}, max: {max(lengths)}")
+        logger.info(f"skipped: {str(skipped)}, total: {str(len(self.audiopaths_sid_text))}")
 
         self.audiopaths_sid_text = audiopaths_sid_text_new
         self.lengths = lengths
@@ -283,26 +295,23 @@ class TextAudioSpeakerLoader(Dataset):
 
     def get_audio_text_speaker_pair(self, audiopath_sid_text):
         # separate filename, speaker_id and text
-        audiopath, sid, text = (
-            audiopath_sid_text[0],
-            audiopath_sid_text[1],
-            audiopath_sid_text[2],
-        )
+        audiopath, sid, text = audiopath_sid_text
         text = self.get_text(text)
         spec, wav = self.get_audio(audiopath)
         sid = self.get_sid(sid)
         return (text, spec, wav, sid)
 
     def get_audio(self, filename: str):
-        audio, sampling_rate = load_wav_to_torch(filename)
+        audio, sampling_rate = load_wav_to_torch_librosa(filename, self.sampling_rate)
 
         if sampling_rate != self.sampling_rate:
             raise ValueError(
                 f"{sampling_rate} {self.sampling_rate} SR doesn't match target {self.sampling_rate} SR"
             )
 
-        audio_norm = audio / self.max_wav_value
-        audio_norm = audio_norm.unsqueeze(0)
+        # NOTE: normalize has been achieved by torchaudio
+        # audio_norm = audio / self.max_wav_value
+        audio_norm = audio.unsqueeze(0)
         spec_filename = filename.replace(".wav", ".spec.pt")
 
         # for vits2
