@@ -9,6 +9,7 @@ from glob import glob
 import numpy as np
 import torch
 from scipy.io.wavfile import read
+import librosa
 from torch.utils.tensorboard import SummaryWriter
 
 MATPLOTLIB_FLAG = False
@@ -198,6 +199,9 @@ def load_wav_to_torch(full_path: str):
     sampling_rate, data = read(full_path)
     return torch.FloatTensor(data.astype(np.float32)), sampling_rate
 
+def load_wav_to_torch_librosa(full_path: str, sr: int = None):
+    audio_norm, sampling_rate = librosa.load(full_path, sr=sr, mono=True)
+    return torch.FloatTensor(audio_norm.astype(np.float32)), sampling_rate
 
 def load_filepaths_and_text(filename: str, split: str = "|"):
     with open(filename, encoding="utf-8") as f:
