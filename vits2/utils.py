@@ -5,7 +5,7 @@ import os
 import subprocess
 import sys
 from glob import glob
-
+from loguru import logger as loguru_logger
 import numpy as np
 import torch
 from scipy.io.wavfile import read
@@ -19,6 +19,13 @@ logger = logging
 
 numba_logger = logging.getLogger("numba")
 numba_logger.setLevel(logging.WARNING)
+
+loguru_logger.remove()
+loguru_logger.add(sys.stdout, level="INFO")
+loguru_logger.add("vits2_train.log", level="DEBUG", colorize=False, backtrace=True, diagnose=True, filter=lambda record: record["extra"].get("name") == "train")
+loguru_logger.add("vits2_debug.log", level="DEBUG", colorize=False, backtrace=True, diagnose=True, filter=lambda record: record["extra"].get("name") == "debug")
+train_logger = loguru_logger.bind(name="train")
+debug_logger = loguru_logger.bind(name="debug")
 
 def load_checkpoint(checkpoint_path: str, model, optimizer: torch.nn.Module = None):
     assert os.path.isfile(checkpoint_path)

@@ -29,7 +29,7 @@ from torch.nn import functional as F
 from torch.nn.utils import remove_weight_norm, spectral_norm, weight_norm
 
 import monotonic_align
-from vits2 import attentions, commons, modules
+from vits2 import attentions, commons, modules, utils
 
 AVAILABLE_FLOW_TYPES = [
     "pre_conv",
@@ -37,11 +37,13 @@ AVAILABLE_FLOW_TYPES = [
     "fft",
     "mono_layer_inter_residual",
     "mono_layer_post_residual",
+    "fft2",
 ]
 
 AVAILABLE_DURATION_DISCRIMINATOR_TYPES = [
     "dur_disc_1",
     "dur_disc_2",
+    "dur_disc_3",
 ]
 
 
@@ -423,6 +425,109 @@ class DurationDiscriminatorV2(nn.Module):  # for vits2
         for dur in [dur_r, dur_hat]:
             output_prob = self.forward_probability(x, x_mask, dur, g)
             output_probs.append([output_prob])
+
+        return output_probs
+
+class DurationDiscriminatorV3(nn.Module): # for vits2
+    def __init__(
+        self,
+        in_channels,
+        filter_channels,
+        kernel_size,
+        p_dropout,
+        gin_channels=0,
+    ):
+        super().__init__()
+
+        self.in_channels = in_channels
+        self.filter_channels = filter_channels
+        self.kernel_size = kernel_size
+        self.p_dropout = p_dropout
+        self.gin_channels = gin_channels
+
+        self.drop = nn.Dropout(p_dropout)
+        self.conv_1 = nn.Conv1d(
+            in_channels,
+            filter_channels,
+            kernel_size,
+            padding=kernel_size // 2,
+        )
+        self.norm_1 = modules.LayerNorm(filter_channels)
+        self.conv_2 = nn.Conv1d(
+            filter_channels,
+            filter_channels,
+            kernel_size,
+            padding=kernel_size // 2,
+        )
+        self.norm_2 = modules.LayerNorm(filter_channels)
+        self.dur_proj = nn.Conv1d(1, filter_channels, 1)
+        self.pre_out_conv_1 = nn.Conv1d(
+            2 * filter_channels,
+            filter_channels,
+            kernel_size,
+            padding=kernel_size // 2,
+        )
+        self.pre_out_norm_1 = modules.LayerNorm(filter_channels)
+        self.pre_out_conv_2 = nn.Conv1d(
+            filter_channels,
+            filter_channels,
+            kernel_size,
+            padding=kernel_size // 2,
+        )
+        self.pre_out_norm_2 = modules.LayerNorm(filter_channels)
+
+        if gin_channels != 0:
+            self.cond = nn.Conv1d(gin_channels, in_channels, 1)
+        
+        self.output_layer = nn.Sequential(nn.Linear(filter_channels, 1), nn.Sigmoid())
+    
+    def forward_probability(
+        self,
+        x: torch.Tensor,
+        x_mask: torch.Tensor,
+        dur: torch.Tensor,
+        g: torch.Tensor = None,
+    ):
+        dur = self.dur_proj(dur)
+        x = torch.cat([x, dur], dim=1)
+        x = self.pre_out_conv_1(x * x_mask)
+        x = torch.relu(x)
+        x = self.pre_out_norm_1(x)
+        x = self.drop(x)
+        x = self.pre_out_conv_2(x * x_mask)
+        x = torch.relu(x)
+        x = self.pre_out_norm_2(x)
+        x = self.drop(x)
+        x = x * x_mask
+        x = x.transpose(1, 2)
+        output_prob = self.output_layer(x)
+        return output_prob
+    
+    def forward(
+        self,
+        x: torch.Tensor,
+        x_mask: torch.Tensor,
+        dur_r: torch.Tensor,
+        dur_hat: torch.Tensor,
+        g: torch.Tensor = None,
+    ):
+        x = torch.detach(x)
+        if g is not None:
+            g = torch.detach(g)
+            x = x + self.cond(g)
+        x = self.conv_1(x * x_mask)
+        x = torch.relu(x)
+        x = self.norm_1(x)
+        x = self.drop(x)
+        x = self.conv_2(x * x_mask)
+        x = torch.relu(x)
+        x = self.norm_2(x)
+        x = self.drop(x)
+
+        output_probs = []
+        for dur in [dur_r, dur_hat]:
+            output_prob = self.forward_probability(x, x_mask, dur, g)
+            output_probs.append(output_prob)
 
         return output_probs
 
@@ -832,6 +937,10 @@ class ResidualCouplingTransformersBlock(nn.Module):  # for vits2
         gin_channels=0,
         use_transformer_flows=False,
         transformer_flow_type="pre_conv",
+        filter_channels=0,
+        n_heads=0,
+        p_dropout=0,
+        share_parameter=False,
     ):
         super().__init__()
 
@@ -931,6 +1040,37 @@ class ResidualCouplingTransformersBlock(nn.Module):  # for vits2
                             residual_connection=True,
                         )
                     )
+            elif transformer_flow_type == "fft2":
+                self.wn = (
+                    attentions.FFT(
+                        hidden_channels,
+                        filter_channels,
+                        n_heads,
+                        n_layers,
+                        kernel_size,
+                        p_dropout,
+                        isflow=True,
+                        gin_channels=self.gin_channels,
+                    )
+                    if share_parameter
+                    else None
+                )
+                for i in range(n_flows):
+                    self.flows.append(
+                        modules.TransformerCouplingLayer(
+                            channels,
+                            hidden_channels,
+                            kernel_size,
+                            3, # n_layers,
+                            n_heads,
+                            p_dropout,
+                            filter_channels,
+                            mean_only=True,
+                            wn_sharing_parameter=self.wn,
+                            gin_channels=self.gin_channels,
+                        )
+                    )
+                    self.flows.append(modules.Flip())
         else:
             for i in range(n_flows):
                 self.flows.append(
@@ -1327,6 +1467,7 @@ class SynthesizerTrn(nn.Module):
         n_speakers=0,
         gin_channels=0,
         use_sdp=True,
+        flow_share_parameter=False,
         **kwargs,
     ):
         super().__init__()
@@ -1353,7 +1494,7 @@ class SynthesizerTrn(nn.Module):
 
         # for vits2
         self.use_spk_conditioned_encoder = kwargs.get(
-            "use_spk_conditioned_encoder", False
+            "use_spk_conditioned_encoder", True
         )
         self.use_transformer_flows = kwargs.get("use_transformer_flows", False)
         self.transformer_flow_type = kwargs.get(
@@ -1364,7 +1505,7 @@ class SynthesizerTrn(nn.Module):
             assert (
                 self.transformer_flow_type in AVAILABLE_FLOW_TYPES
             ), f"transformer_flow_type must be one of {AVAILABLE_FLOW_TYPES}"
-        # self.use_duration_discriminator = kwargs.get("use_duration_discriminator", False)
+        self.use_duration_discriminator = kwargs.get("use_duration_discriminator", False)
         self.use_noise_scaled_mas = kwargs.get("use_noise_scaled_mas", False)
         self.mas_noise_scale_initial = kwargs.get("mas_noise_scale_initial", 0.01)
         self.noise_scale_delta = kwargs.get("noise_scale_delta", 2e-6)
@@ -1408,6 +1549,8 @@ class SynthesizerTrn(nn.Module):
         )
         # self.flow = ResidualCouplingBlock(inter_channels, hidden_channels, 5, 1, 4, gin_channels=gin_channels)
 
+        
+
         self.flow = ResidualCouplingTransformersBlock(
             inter_channels,
             hidden_channels,
@@ -1417,10 +1560,15 @@ class SynthesizerTrn(nn.Module):
             gin_channels=gin_channels,
             use_transformer_flows=self.use_transformer_flows,
             transformer_flow_type=self.transformer_flow_type,
+            filter_channels=filter_channels,
+            n_heads=n_heads,
+            p_dropout=p_dropout,
+            share_parameter=flow_share_parameter,
         )
 
         if use_sdp:
-            self.dp = StochasticDurationPredictor(
+            # for test TODO: remove after test
+            self.sdp = StochasticDurationPredictor(
                 hidden_channels,
                 192,
                 3,
@@ -1428,6 +1576,23 @@ class SynthesizerTrn(nn.Module):
                 4,
                 gin_channels=gin_channels,
             )
+            self.dp = DurationPredictor(
+                hidden_channels,
+                256,
+                3,
+                0.5,
+                gin_channels=gin_channels,
+            )
+
+            # original
+            # self.dp = StochasticDurationPredictor(
+            #     hidden_channels,
+            #     192,
+            #     3,
+            #     0.5,
+            #     4,
+            #     gin_channels=gin_channels,
+            # )
         else:
             self.dp = DurationPredictor(
                 hidden_channels,
@@ -1487,10 +1652,23 @@ class SynthesizerTrn(nn.Module):
         w = attn.sum(2)
 
         if self.use_sdp:
-            l_length = self.dp(x, x_mask, w, g=g)
-            l_length = l_length / torch.sum(x_mask)
-            logw = self.dp(x, x_mask, g=g, reverse=True, noise_scale=1.0)
+            # for test TODO: remove after test
+            l_length_sdp = self.sdp(x, x_mask, w, g=g)
+            l_length_sdp = l_length_sdp / torch.sum(x_mask)
+
             logw_ = torch.log(w + 1e-6) * x_mask
+            logw = self.dp(x, x_mask, g=g)
+
+            l_length_dp = torch.sum((logw - logw_) ** 2, [1, 2]) / torch.sum(
+                x_mask
+            ) # for averaging
+            l_length = l_length_dp + l_length_sdp
+
+            # original
+            # l_length = self.dp(x, x_mask, w, g=g)
+            # l_length = l_length / torch.sum(x_mask)
+            # logw = self.dp(x, x_mask, g=g, reverse=True, noise_scale=1.0)
+            # logw_ = torch.log(w + 1e-6) * x_mask
         else:
             logw_ = torch.log(w + 1e-6) * x_mask
             logw = self.dp(x, x_mask, g=g)
@@ -1525,10 +1703,13 @@ class SynthesizerTrn(nn.Module):
         x: torch.Tensor,
         x_lengths,
         sid=None,
-        noise_scale=1,
+        noise_scale=0.667,
         length_scale=1,
-        noise_scale_w=1.0,
+        noise_scale_w=0.8,
         max_len=None,
+        sdp_radio=0,
+        y=None,
+        g=None,
     ):
         
         if self.n_speakers > 0:
@@ -1539,7 +1720,12 @@ class SynthesizerTrn(nn.Module):
         x, m_p, logs_p, x_mask = self.enc_p(x, x_lengths, g=g)
 
         if self.use_sdp:
-            logw = self.dp(x, x_mask, g=g, reverse=True, noise_scale=noise_scale_w)
+            # for test TODO: remove after test
+            logw = self.sdp(x, x_mask, g=g, reverse=True, noise_scale=noise_scale_w) * (sdp_radio)
+            + self.dp(x, x_mask, g=g) * (1 - sdp_radio)
+
+            # original
+            # logw = self.dp(x, x_mask, g=g, reverse=True, noise_scale=noise_scale_w)
         else:
             logw = self.dp(x, x_mask, g=g)
 
@@ -1564,9 +1750,7 @@ class SynthesizerTrn(nn.Module):
         o = self.dec((z * y_mask)[:, :, :max_len], g=g)
         return o, attn, y_mask, (z, z_p, m_p, logs_p)
 
-    # currently vits-2 is not capable of voice conversion
-    ## comment - choihkk
-    ## Assuming the use of the ResidualCouplingTransformersLayer2 module, it seems that voice conversion is possible
+    
     def voice_conversion(
         self,
         y: torch.Tensor,

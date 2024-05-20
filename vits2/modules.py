@@ -1,3 +1,19 @@
+"""
+Modules
+
+- LayerNorm
+- ConvReluNorm
+- DDSConv
+- WN
+- ResBlock1
+- ResBlock2
+- Log
+- Flip
+- ElementwiseAffine
+- ResidualCouplingLayer
+- ConvFlow
+"""
+
 import math
 
 import torch
@@ -5,7 +21,7 @@ from torch import nn
 from torch.nn import functional as F
 from torch.nn.utils import remove_weight_norm, weight_norm
 
-from vits2 import commons, transforms
+from vits2 import commons, transforms, attentions
 
 LRELU_SLOPE = 0.1
 
@@ -235,11 +251,11 @@ class WN(nn.Module):
         if self.gin_channels != 0:
             remove_weight_norm(self.cond_layer)
 
-        for l in self.in_layers:
-            remove_weight_norm(l)
+        for layer in self.in_layers:
+            remove_weight_norm(layer)
 
-        for l in self.res_skip_layers:
-            remove_weight_norm(l)
+        for layer in self.res_skip_layers:
+            remove_weight_norm(layer)
 
 
 class ResBlock1(nn.Module):
@@ -586,3 +602,74 @@ class ConvFlow(nn.Module):
             return x, logdet
         else:
             return x
+
+
+class TransformerCouplingLayer(nn.Module):
+    def __init__(
+        self,
+        channels,
+        hidden_channels,
+        kernel_size,
+        n_layers,
+        n_heads,
+        p_dropout=0,
+        filter_channels=0,
+        mean_only=False,
+        wn_sharing_parameter=None,
+        gin_channels=0,
+    ):
+        assert n_layers == 3, n_layers
+        assert channels % 2 == 0, "channels should by divisible 2."
+        super().__init__()
+        self.channels = channels
+        self.hidden_channels = hidden_channels
+        self.kernel_size = kernel_size
+        self.n_layers = n_layers
+        self.half_channles = channels // 2
+        self.n_heads = n_heads
+        self.p_dropout = p_dropout
+        self.filter_channels = filter_channels
+        self.mean_only = mean_only
+        self.wn_sharing_parameter = wn_sharing_parameter
+        self.gin_channels = gin_channels
+
+        self.pre = nn.Conv1d(self.half_channles, hidden_channels, 1)
+        self.enc = (
+            attentions.Encoder(
+                hidden_channels,
+                filter_channels,
+                n_heads,
+                n_layers,
+                kernel_size,
+                p_dropout,
+                isflow=True,
+                gin_channels=gin_channels,
+            )
+            if wn_sharing_parameter is None
+            else wn_sharing_parameter
+        )
+        self.post = nn.Conv1d(hidden_channels, self.half_channles * (2 - mean_only), 1)
+        self.post.weight.data.zero_()
+        self.post.bias.data.zero_()
+
+    def forward(self, x: torch.Tensor, x_mask: torch.Tensor, g: torch.Tensor = None, reverse: bool = False):
+        x0, x1 = torch.split(x, [self.half_channles] * 2, 1)
+        h = self.pre(x0) * x_mask
+        h = self.enc(h, x_mask, g=g)
+        stats = self.post(h) * x_mask
+        if not self.mean_only:
+            m, logs = torch.split(stats, [self.half_channles] * 2, 1)
+        else:
+            m = stats
+            logs = torch.zeros_like(m)
+
+        if not reverse:
+            x1 = m + x1 * torch.exp(logs) * x_mask
+            x = torch.cat([x0, x1], 1)
+            logdet = torch.sum(logs, [1, 2])
+            return x, logdet
+        else:
+            x1 = (x1 - m) * torch.exp(-logs) * x_mask
+            x = torch.cat([x0, x1], 1)
+            return x
+        
