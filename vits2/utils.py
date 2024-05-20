@@ -12,6 +12,7 @@ from scipy.io.wavfile import read
 import librosa
 from torch.utils.tensorboard import SummaryWriter
 
+
 MATPLOTLIB_FLAG = False
 
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
@@ -22,10 +23,12 @@ numba_logger.setLevel(logging.WARNING)
 
 loguru_logger.remove()
 loguru_logger.add(sys.stdout, level="INFO")
-loguru_logger.add("vits2_train.log", level="DEBUG", colorize=False, backtrace=True, diagnose=True, filter=lambda record: record["extra"].get("name") == "train")
-loguru_logger.add("vits2_debug.log", level="DEBUG", colorize=False, backtrace=True, diagnose=True, filter=lambda record: record["extra"].get("name") == "debug")
-train_logger = loguru_logger.bind(name="train")
-debug_logger = loguru_logger.bind(name="debug")
+
+# if use, remove comment
+# loguru_logger.add("vits2_train.log", level="DEBUG", colorize=False, backtrace=True, diagnose=True, filter=lambda record: record["extra"].get("name") == "train")
+# loguru_logger.add("vits2_debug.log", level="DEBUG", colorize=False, backtrace=True, diagnose=True, filter=lambda record: record["extra"].get("name") == "debug")
+# train_logger = loguru_logger.bind(name="train")
+# debug_logger = loguru_logger.bind(name="debug")
 
 def load_checkpoint(checkpoint_path: str, model, optimizer: torch.nn.Module = None):
     assert os.path.isfile(checkpoint_path)
@@ -50,7 +53,7 @@ def load_checkpoint(checkpoint_path: str, model, optimizer: torch.nn.Module = No
         try:
             new_state_dict[k] = saved_state_dict[k]
         except:
-            logger.info(f"{k} is not in the checkpoint.")
+            loguru_logger.info(f"{k} is not in the checkpoint.")
             new_state_dict[k] = v
 
     if hasattr(model, "module"):
@@ -58,7 +61,7 @@ def load_checkpoint(checkpoint_path: str, model, optimizer: torch.nn.Module = No
     else:
         model.load_state_dict(new_state_dict)
 
-    logger.info(f"Loaded checkpoint '{checkpoint_path}' (iteration {iteration})")
+    loguru_logger.info(f"Loaded checkpoint '{checkpoint_path}' (iteration {iteration})")
 
     return model, optimizer, learning_rate, iteration
 

@@ -52,7 +52,7 @@ def run(rank, n_gpus, hps):
 
     if rank == 0:
         logger = utils.get_logger(hps.model_dir)
-        logger.info(hps)
+        utils.loguru_logger.info(hps)
         utils.check_git_hash(hps.model_dir)
         writer = SummaryWriter(log_dir=hps.model_dir)
         writer_eval = SummaryWriter(log_dir=os.path.join(hps.model_dir, "eval"))
@@ -516,10 +516,10 @@ def train_and_evaluate(
             if global_step % hps.train.log_interval == 0:
                 lr = optim_g.param_groups[0]["lr"]
                 losses = [loss_disc, loss_gen, loss_fm, loss_mel, loss_dur, loss_kl]
-                logger.info(
+                utils.loguru_logger.info(
                     f"Train Epoch : {epoch} [{100.0 * batch_idx / len(train_loader):.0f}%]"
                 )
-                logger.info([x.item() for x in losses] + [global_step, lr])
+                utils.loguru_logger.info([x.item() for x in losses] + [global_step, lr])
 
                 scalar_dict = {
                     "loss/g/total": loss_gen_all,
@@ -617,7 +617,7 @@ def train_and_evaluate(
         global_step += 1
 
     if rank == 0:
-        utils.train_logger.info(f"===> Epoch: {epoch}")
+        utils.loguru_logger.info(f"===> Epoch: {epoch}")
 
 
 def evaluate(hps, generator, eval_loader, writer_eval):
@@ -626,7 +626,7 @@ def evaluate(hps, generator, eval_loader, writer_eval):
     image_dict = {}
     audio_dict = {}
 
-    utils.train_logger.info("Evaluating ...")
+    utils.loguru_logger.info("Evaluating ...")
     
     with torch.no_grad():
         for batch_idx, (
@@ -750,7 +750,7 @@ def evaluate(hps, generator, eval_loader, writer_eval):
     )
 
     generator.train()
-    utils.train_logger.info("Evaluate done.")
+    utils.loguru_logger.info("Evaluate done.")
     torch.cuda.empty_cache()
 
 

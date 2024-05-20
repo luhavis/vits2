@@ -249,7 +249,7 @@ class TextAudioSpeakerLoader(Dataset):
         if self.use_mel_spec_posterior:
             self.n_mel_channels = getattr(hparams, "n_mel_channels", 80)
 
-        self.model_dir = kwargs.get("model_dir") # for logging
+        
 
         random.seed(1234)
         random.shuffle(self.audiopaths_sid_text)
@@ -264,11 +264,10 @@ class TextAudioSpeakerLoader(Dataset):
         # spec_length = wav_length // hop_length
 
         skipped = 0
-        logger = utils.get_logger(self.model_dir)
 
         audiopaths_sid_text_new = []
         lengths = []
-        logger.info("Init dataset...")
+        utils.loguru_logger.info("Init dataset...")
         for audiopath, sid, text in tqdm(self.audiopaths_sid_text):
 
             if not os.path.isfile(audiopath):
@@ -284,8 +283,8 @@ class TextAudioSpeakerLoader(Dataset):
 
                 lengths.append(length)
 
-        logger.info(f"min: {min(lengths)}, max: {max(lengths)}")
-        logger.info(f"skipped: {str(skipped)}, total: {str(len(self.audiopaths_sid_text))}")
+        utils.loguru_logger.info(f"min: {min(lengths)}, max: {max(lengths)}")
+        utils.loguru_logger.info(f"skipped: {str(skipped)}, total: {str(len(self.audiopaths_sid_text))}")
 
         self.audiopaths_sid_text = audiopaths_sid_text_new
         self.lengths = lengths
