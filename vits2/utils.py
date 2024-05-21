@@ -315,8 +315,7 @@ def get_logger(model_dir: str, filename: str = "train.log"):
     logger.addHandler(h)
     return logger
 
-def debug_tensor():
-    ""
+
 
 class HParams:
     def __init__(self, **kwargs):
