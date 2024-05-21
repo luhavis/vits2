@@ -37,9 +37,12 @@ else:
 
 net_g = SynthesizerTrn(
     len(symbols),
-    posterior_channels,
+    # posterior_channels,
+    hps.data.filter_length // 2 + 1,
     hps.train.segment_size // hps.data.hop_length,
     n_speakers=hps.data.n_speakers,
+    mas_noise_scale_initial=0.01,
+    noise_scale_delta=2e-6,
     **hps.model,
 ).cuda()
 _ = net_g.eval()
@@ -59,6 +62,8 @@ with torch.no_grad():
             noise_scale=0.667,
             noise_scale_w=0.8,
             length_scale=1,
+            max_len=1000,
+            sdp_radio=1.0,
         )[0][0, 0]
         .data.cpu()
         .float()
