@@ -6,6 +6,15 @@ This repo is practice project.
 tensorboard --logdir {model_dir} --port 6006
 ```
 
+# Prepare train, validation data
+```bash
+# single speaker
+python preprocess.py --text_index 1 --filelists filelists/train.txt filelists/train_val.txt --text_cleaners korean_cleaners
+
+# multi speaker
+python preprocess.py --text_index 2 --filelists filelists/train.txt filelists/train_val.txt --text_cleaners korean_cleaners
+```
+
 # Train
 ```bash
 python train_ms.py --config {config_file_path} --model {model_name}
