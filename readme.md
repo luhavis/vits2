@@ -42,3 +42,5 @@ python setup.py build_ext --inplace
 # References
 - [daniilrobnikov/vits2](https://github.com/daniilrobnikov/vits2)
 - [p0p4k/vits2_pytorch](https://github.com/p0p4k/vits2_pytorch)
+- [lucidrains/BS-RoFormer](https://github.com/lucidrains/BS-RoFormer)
+- [ZFTurbo/Music-Source-Separation-Training](https://github.com/ZFTurbo/Music-Source-Separation-Training)
